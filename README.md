@@ -90,7 +90,7 @@ into your own main pawn slot. To use it:
 1. Quit the game and back up `DDDA.sav` from your Steam userdata
    folder. The tool overwrites the save file in place.
 2. Find the saved pawn you want under `pawnlib\<level>\`. Each saved
-   pawn is a pair of files (`.pawn` and `.xml`) sharing a name like
+   pawn is a set of files (`.pawn`, `.meta`, and `.xml`) sharing a name like
    `0096E48B`.
 3. Open a command prompt next to `restore_pawn.exe` and run:
 

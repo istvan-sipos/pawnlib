@@ -4,8 +4,8 @@ A pawn archive mod for *Dragon's Dogma: Dark Arisen*.
 
 Every time you rest at an inn, pawnlib saves a copy of your main pawn to
 disk. Later, you can hire any of those saved pawns from the rift, just
-like a regular online pawn. If you change their gear or teach them new
-things while they are in your party, the changes are written back to the
+like a regular online pawn. If you change their gear or gain enemy/quest/location
+knowledge while they are in your party, the changes are written back to the
 saved copy when you save the game.
 
 A separate command-line tool, `restore_pawn.exe`, can promote any saved
@@ -24,19 +24,20 @@ pawn into your own main pawn slot.
 
 - *Dragon's Dogma: Dark Arisen* on PC (Steam version). Linux + Proton
   works too.
-- [ddda-dinput8](https://github.com/kubik-jaroslav/ddda-dinput8) — the
-  mod loader. pawnlib needs it to start. If you already use any other
-  DDDA mod that runs through ddda-dinput8, you have it installed.
+- [dinput8](https://www.nexusmods.com/dragonsdogma/mods/96) — Allows
+  loading of external dll's into the game.
 - An active Steam login. pawnlib uses your real Steam session; you do
   not need any emulator or workaround.
 
 ## Installation
 
-1. Install ddda-dinput8 first. Its `dinput8.dll` and `dinput8.ini`
+1. Install dinput8 first. Its `dinput8.dll` and `dinput8.ini`
    should sit next to `DDDA.exe` in your game folder.
 2. Download the latest pawnlib release archive.
 3. Extract its contents into the same folder where `dinput8.dll`
    lives. You should end up with these new files next to `DDDA.exe`:
+   - `dinput8.dll`
+   - `dinput8.ini`
    - `pawnlib.dll`
    - `pawnlib.ini`
    - `restore_pawn.exe`
@@ -123,19 +124,11 @@ save) while the pawn is still in your party.
 
 ## Credits
 
-- [**ddda-dinput8**](https://github.com/kubik-jaroslav/ddda-dinput8)
-  by kubik-jaroslav — the mod loader that lets pawnlib run alongside
-  the game. pawnlib cannot start without it.
-- [**ddsavetool**](https://www.fluffyquack.com/) by FluffyQuack — the
-  reverse-engineering reference for the DDDA save file format. Its
-  decryption pipeline made the whole project feasible.
+- [**dinput8**](https://www.nexusmods.com/dragonsdogma/mods/96) [src](https://github.com/kubik-jaroslav/ddda-dinput8)
+  allows loading of third party dll's
 
 ## Source
 
 Source code, build instructions, and issue tracker:
 <https://github.com/istvan-sipos/pawnlib.git>
 
-## License
-
-pawnlib is released under the MIT License. See the `LICENSE` file in the
-release archive (or the source repository) for the full text.

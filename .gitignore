@@ -1,0 +1,4 @@
+pawnlib.dll
+tools/restore_pawn.exe
+*.log
+build/

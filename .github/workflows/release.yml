@@ -1,0 +1,78 @@
+name: Release
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write   # needed to push the tag and create the release
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # full history + tags so the existence check is meaningful
+
+      - name: Read VERSION
+        id: ver
+        run: |
+          VERSION="$(tr -d '[:space:]' < VERSION)"
+          if [ -z "$VERSION" ]; then
+            echo "::error::VERSION file is empty"
+            exit 1
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=v$VERSION"     >> "$GITHUB_OUTPUT"
+          echo "Building pawnlib $VERSION"
+
+      - name: Refuse to rebuild an existing version
+        run: |
+          TAG="${{ steps.ver.outputs.tag }}"
+          if git rev-parse --verify "refs/tags/$TAG" >/dev/null 2>&1; then
+            echo "::error::Tag $TAG already exists. Bump VERSION, push, and re-run the workflow."
+            exit 1
+          fi
+
+      - name: Install build toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            gcc-mingw-w64-i686-win32 \
+            libz-mingw-w64-dev \
+            zip
+
+      - name: Build pawnlib.dll and restore_pawn.exe
+        run: |
+          make pawnlib.dll
+          make tools
+
+      - name: Stage release archive
+        run: |
+          NAME="pawnlib-${{ steps.ver.outputs.version }}"
+          mkdir -p "$NAME"
+          cp pawnlib.dll       "$NAME/"
+          cp pawnlib.ini       "$NAME/"
+          cp README.md         "$NAME/"
+          cp LICENSE           "$NAME/"
+          cp tools/restore_pawn.exe "$NAME/"
+          zip -r "$NAME.zip" "$NAME"
+          ls -la "$NAME.zip"
+
+      - name: Tag release commit
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "${{ steps.ver.outputs.tag }}" -m "pawnlib ${{ steps.ver.outputs.version }}"
+          git push origin "${{ steps.ver.outputs.tag }}"
+
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.ver.outputs.tag }}
+          name: "pawnlib ${{ steps.ver.outputs.version }}"
+          files: pawnlib-${{ steps.ver.outputs.version }}.zip
+          generate_release_notes: true

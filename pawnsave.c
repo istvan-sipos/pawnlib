@@ -183,29 +183,45 @@ static int xml_for_each_class(xspan in, const char *type,
     }
 }
 
-/* Fill `out[0..count-1]` with values from `<array name="NAME" type="u32" count="N">`
- * by walking its inner `<u32 value="N"/>` children in order. Missing entries
- * stay zero (callers should pre-zero the buffer if they care). Returns 0 on
- * success — including when the array is absent — so a pawn that simply has
- * no knowledge yet doesn't fail the parse. */
-static int xml_get_u32_array(xspan in, const char *name, uint32_t *out, int count)
+/* Locate the body span of `<array name="NAME" type="TYPE" ...>…</array>`.
+ * Returns 0 on success with *out_body set to the bytes between the opening
+ * tag's `>` and the matching `</array>`. Returns 1 if absent. Returns -1 on
+ * over-long name (cannot construct the search needle). */
+static int xml_find_typed_array_body(xspan in, const char *name,
+                                     const char *type, xspan *out_body)
 {
     char opener[96];
     int n = snprintf(opener, sizeof(opener),
-                     "<array name=\"%s\" type=\"u32\"", name);
+                     "<array name=\"%s\" type=\"%s\"", name, type);
     if (n <= 0 || n >= (int)sizeof(opener)) return -1;
     const char *start = xfind(in, opener);
-    if (!start) return 0;                          /* absent → leave out[] as caller initialised */
+    if (!start) return 1;
     const char *gt = memchr(start + n, '>', (size_t)(in.end - (start + n)));
-    if (!gt) return 0;
+    if (!gt) return 1;
     xspan body = { gt + 1, in.end };
     const char *close = xfind(body, "</array>");
-    if (!close) return 0;
+    if (!close) return 1;
     body.end = close;
+    *out_body = body;
+    return 0;
+}
+
+/* Walk `<ELEM value="X"/>` children of a body span, copying each value's text
+ * (between the opening `"` and closing `"`) into a caller-supplied small
+ * buffer and invoking `parse` to convert it. Stops after `count` elements
+ * or when the body runs out of matching tags. Returns 0 on success. */
+typedef void (*xml_value_parse_cb)(const char *text, void *out_array, int idx);
+
+static int xml_walk_value_tags(xspan body, const char *elem,
+                               int count, void *out_array,
+                               xml_value_parse_cb parse)
+{
+    char tag[16];
+    int tn = snprintf(tag, sizeof(tag), "<%s value=\"", elem);
+    if (tn <= 0 || tn >= (int)sizeof(tag)) return -1;
+    size_t tlen = (size_t)tn;
 
     const char *p = body.p;
-    const char *tag = "<u32 value=\"";
-    size_t tlen = strlen(tag);
     int idx = 0;
     while (idx < count) {
         xspan rem = { p, body.end };
@@ -214,15 +230,62 @@ static int xml_get_u32_array(xspan in, const char *name, uint32_t *out, int coun
         const char *v = hit + tlen;
         const char *q = memchr(v, '"', (size_t)(body.end - v));
         if (!q) break;
-        char buf[16];
+        char buf[32];
         size_t len = (size_t)(q - v);
         if (len == 0 || len >= sizeof(buf)) break;
         memcpy(buf, v, len);
         buf[len] = 0;
-        out[idx++] = (uint32_t)strtoul(buf, NULL, 10);
+        parse(buf, out_array, idx++);
         p = q + 1;
     }
     return 0;
+}
+
+static void parse_u32_elem(const char *t, void *arr, int idx)
+{
+    ((uint32_t *)arr)[idx] = (uint32_t)strtoul(t, NULL, 10);
+}
+static void parse_f32_elem(const char *t, void *arr, int idx)
+{
+    ((float *)arr)[idx] = strtof(t, NULL);
+}
+static void parse_u8_elem(const char *t, void *arr, int idx)
+{
+    ((uint8_t *)arr)[idx] = (uint8_t)strtoul(t, NULL, 10);
+}
+
+/* Fill `out[0..count-1]` with values from `<array name="NAME" type="u32" count="N">`
+ * by walking its inner `<u32 value="N"/>` children in order. Missing entries
+ * stay zero (callers should pre-zero the buffer if they care). Returns 0 on
+ * success — including when the array is absent — so a pawn that simply has
+ * no knowledge yet doesn't fail the parse. */
+static int xml_get_u32_array(xspan in, const char *name, uint32_t *out, int count)
+{
+    xspan body;
+    int r = xml_find_typed_array_body(in, name, "u32", &body);
+    if (r != 0) return r < 0 ? -1 : 0;
+    return xml_walk_value_tags(body, "u32", count, out, parse_u32_elem);
+}
+
+/* f32 sibling of xml_get_u32_array. Output element type is `float`; absent
+ * array → no writes (callers pre-zero). */
+static int xml_get_f32_array(xspan in, const char *name, float *out, int count)
+{
+    xspan body;
+    int r = xml_find_typed_array_body(in, name, "f32", &body);
+    if (r != 0) return r < 0 ? -1 : 0;
+    return xml_walk_value_tags(body, "f32", count, out, parse_f32_elem);
+}
+
+/* u8 sibling of xml_get_u32_array. Output element type is `uint8_t`; absent
+ * array → no writes (callers pre-zero). Distinct from xml_get_cname, which
+ * stops at the first 0 byte to recover a NUL-terminated string. */
+static int xml_get_u8_array(xspan in, const char *name, uint8_t *out, int count)
+{
+    xspan body;
+    int r = xml_find_typed_array_body(in, name, "u8", &body);
+    if (r != 0) return r < 0 ? -1 : 0;
+    return xml_walk_value_tags(body, "u8", count, out, parse_u8_elem);
 }
 
 /* Read a <class name="NAME" type="cName">…</class> sub-block: the
@@ -399,6 +462,14 @@ static int cmc_cb(xspan body, int idx, void *ctxp)
      * vocations, areas, quests — so copying them whole preserves the lot. */
     xml_get_u32_array(body, "mStudyFlag",      c->out[slot].study_flag,       322);
     xml_get_u32_array(body, "mLocalStudyFlag", c->out[slot].local_study_flag, 322);
+
+    /* mStudyData.{EncountFrame,KillCnt,UniqueCnt}: progression counters
+     * sitting immediately after mLocalStudyFlag in the archive. Without
+     * these, the bit-flips persisted via mStudyFlag survive a release/re-hire
+     * but the partial progress that drives the *next* flip does not. */
+    xml_get_f32_array(body, "mStudyData.EncountFrame", c->out[slot].study_encount_frame, 72);
+    xml_get_u32_array(body, "mStudyData.KillCnt",      c->out[slot].study_kill_cnt,      72);
+    xml_get_u8_array (body, "mStudyData.UniqueCnt",    c->out[slot].study_unique_cnt,   116);
 
     /* Heap-copy the full <class type="cSAVE_DATA_CMC">…</class> bytes for
      * the .xml sidecar. xml_for_each_class hands us the body span (between

@@ -33,6 +33,16 @@ struct pawnsave_hired_info {
     uint32_t study_flag[322];        /* mStudyFlag       — pawn's per-entry knowledge state */
     uint32_t local_study_flag[322];  /* mLocalStudyFlag  — local/instance knowledge state   */
 
+    /* mStudyData.* progression counters: per-enemy-type encounter time
+     * (frames @ 30 fps), kill count, and unique-event counters. The game uses
+     * these as accumulators that drive bit flips inside mStudyFlag once
+     * per-entry thresholds are crossed. Persisting only mStudyFlag (the
+     * already-unlocked bits) without these counters discards a hired pawn's
+     * partial progress toward not-yet-unlocked knowledge between hires. */
+    float    study_encount_frame[72];   /* mStudyData.EncountFrame — f32 × 72 */
+    uint32_t study_kill_cnt[72];        /* mStudyData.KillCnt      — u32 × 72 */
+    uint8_t  study_unique_cnt[116];     /* mStudyData.UniqueCnt    — u8  × 116 */
+
     /* Raw bytes of the full <class type="cSAVE_DATA_CMC">…</class> element,
      * including the open and close tags. Heap-allocated; caller must free
      * with `free(region_xml)` (NULL when present=0 or on allocation

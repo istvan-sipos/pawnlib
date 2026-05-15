@@ -1608,6 +1608,16 @@ static void archive_rest(const int32 *fresh_details)
 #define WB_STUDY_FLAG_OFF         0x282Cu
 #define WB_LOCAL_STUDY_FLAG_OFF   0x2D38u
 #define WB_STUDY_COUNT            322
+/* mStudyData.* progression counters sit immediately after mLocalStudyFlag in
+ * the inflated XFS, each preceded by its own u32 count prefix (72/72/116).
+ * We patch only the data ranges, never the prefixes, so XFS integrity stays
+ * intact. Verified against a freshly-decoded archive on 2026-05-15. */
+#define WB_ENCOUNT_FRAME_OFF      0x3244u
+#define WB_KILL_CNT_OFF           0x3368u
+#define WB_UNIQUE_CNT_OFF         0x348Cu
+#define WB_STUDY_EF_COUNT         72
+#define WB_STUDY_KC_COUNT         72
+#define WB_STUDY_UC_COUNT         116
 
 /* Parse "NNN:HHHHHHHH" -> (level, stem).  Returns 1 on success, 0 on any
  * format error.  Used to decode a hired pawn's mArisenName back into the
@@ -1700,9 +1710,10 @@ static void writeback_to_archive(int slot, const struct pawnsave_hired_info *inf
 
     /* Build patch list: 2 patches per gear slot (mItemNo s16, mFlag u32 with
      * the 0x80 'equipped' bit cleared — the game re-applies it on load) plus
-     * 1 whole-buffer memcpy per study array.  Backing bytes live on this
+     * 1 whole-buffer memcpy per study array (2x mStudyFlag-class + 3x
+     * mStudyData.* progression counters).  Backing bytes live on this
      * function's stack / inside `info` for the duration of pawnxfs_poke. */
-    struct pawnxfs_patch patches[WB_GEAR_COUNT * 2 + 2];
+    struct pawnxfs_patch patches[WB_GEAR_COUNT * 2 + 5];
     uint8_t              item_bytes[WB_GEAR_COUNT][2];
     uint8_t              flag_bytes[WB_GEAR_COUNT][4];
     int npatches = 0;
@@ -1725,7 +1736,7 @@ static void writeback_to_archive(int slot, const struct pawnsave_hired_info *inf
             .offset = base + WB_FLAG_OFF, .bytes = flag_bytes[k], .len = 4,
         };
     }
-    /* u32 LE on disk == host u32 on x86, so direct point-at-buffer. */
+    /* u32/f32 LE on disk == host u32/f32 on x86, so direct point-at-buffer. */
     patches[npatches++] = (struct pawnxfs_patch){
         .offset = WB_STUDY_FLAG_OFF,
         .bytes  = (const uint8_t *)info->study_flag,
@@ -1735,6 +1746,21 @@ static void writeback_to_archive(int slot, const struct pawnsave_hired_info *inf
         .offset = WB_LOCAL_STUDY_FLAG_OFF,
         .bytes  = (const uint8_t *)info->local_study_flag,
         .len    = WB_STUDY_COUNT * sizeof(uint32_t),
+    };
+    patches[npatches++] = (struct pawnxfs_patch){
+        .offset = WB_ENCOUNT_FRAME_OFF,
+        .bytes  = (const uint8_t *)info->study_encount_frame,
+        .len    = WB_STUDY_EF_COUNT * sizeof(float),
+    };
+    patches[npatches++] = (struct pawnxfs_patch){
+        .offset = WB_KILL_CNT_OFF,
+        .bytes  = (const uint8_t *)info->study_kill_cnt,
+        .len    = WB_STUDY_KC_COUNT * sizeof(uint32_t),
+    };
+    patches[npatches++] = (struct pawnxfs_patch){
+        .offset = WB_UNIQUE_CNT_OFF,
+        .bytes  = info->study_unique_cnt,
+        .len    = WB_STUDY_UC_COUNT,
     };
 
     char err[128] = {0};
@@ -1749,8 +1775,12 @@ static void writeback_to_archive(int slot, const struct pawnsave_hired_info *inf
     int known = 0;
     for (int i = 0; i < WB_STUDY_COUNT; i++)
         if (info->study_flag[i] || info->local_study_flag[i]) known++;
-    log_line("writeback: slot %d (%03d:%s) gear=%d study=%d -> '%s'",
-             slot, level, stem, equipped, known, pawn_path);
+    uint32_t kill_sum = 0;
+    for (int i = 0; i < WB_STUDY_KC_COUNT; i++) kill_sum += info->study_kill_cnt[i];
+    uint32_t uniq_sum = 0;
+    for (int i = 0; i < WB_STUDY_UC_COUNT; i++) uniq_sum += info->study_unique_cnt[i];
+    log_line("writeback: slot %d (%03d:%s) gear=%d study=%d kill=%u uniq=%u -> '%s'",
+             slot, level, stem, equipped, known, kill_sum, uniq_sum, pawn_path);
 
     /* Snapshot the hired pawn's full XML region (vocation, skills, augments,
      * inclinations — none of which the .pawn archive captures) into the .xml

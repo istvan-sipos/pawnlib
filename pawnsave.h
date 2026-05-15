@@ -81,6 +81,26 @@ int pawnsave_read_hired(const void *save_bytes, int32_t save_len,
 int pawnsave_find_main_pawn_region(const uint8_t *xml, size_t xml_len,
                                    size_t *out_off, size_t *out_len);
 
+/* Same as pawnsave_find_main_pawn_region, but skips `<array name="mCmc"...>`
+ * openers whose first cSAVE_DATA_CMC starts at a byte offset below
+ * `search_start`. Used as the iteration primitive behind
+ * pawnsave_find_main_pawn_regions. */
+struct pawnsave_region { size_t off; size_t len; };
+
+/* Return every main-pawn cSAVE_DATA_CMC in the inflated save XML — one per
+ * `<array name="mCmc" type="class" count="3">` container. A normal DDDA save
+ * has two: mPlayerDataManual (live state read on Continue / new-game-plus)
+ * and mPlayerDataBase (checkpoint snapshot that the game ALSO writes on each
+ * inn save for fields like mEdit and inclinations, see save-diff matrix).
+ * Patching both is required for appearance / inclination changes to survive
+ * a load cycle.
+ *
+ * Regions are emitted in ascending file order, capped at `cap`. Returns 0
+ * on success (regardless of count, even 0); negative on bad inputs. */
+int pawnsave_find_main_pawn_regions(const uint8_t *xml, size_t xml_len,
+                                    struct pawnsave_region *out, int cap,
+                                    int *out_count);
+
 /* All-in-one for the FileWrite hook: takes a raw DDDA.sav (header + zlib
  * payload), inflates it, locates the main-pawn region, allocates a copy of
  * those bytes, and returns the buffer (caller frees with free()).

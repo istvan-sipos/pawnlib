@@ -508,14 +508,20 @@ static int cmc_cb(xspan body, int idx, void *ctxp)
  * The returned span starts at the `<` of the opener and ends just past the
  * `>` of the close. ===========================================================
  */
-int pawnsave_find_main_pawn_region(const uint8_t *xml, size_t xml_len,
-                                   size_t *out_off, size_t *out_len)
+/* Single-region finder with a resumable start offset. The public singular
+ * and plural APIs both go through this. `search_start` is in bytes from
+ * xml; the first `<array name="mCmc"...>` opener at or after `search_start`
+ * is consumed. Returns 0 / fills *out_off and *out_len, or -1 if no further
+ * region is found. */
+static int find_main_pawn_region_from(const uint8_t *xml, size_t xml_len,
+                                      size_t search_start,
+                                      size_t *out_off, size_t *out_len)
 {
-    if (!xml || !out_off || !out_len) return -1;
-
+    if (search_start >= xml_len) return -1;
     xspan whole = { (const char *)xml, (const char *)xml + xml_len };
+    xspan from  = { (const char *)xml + search_start, whole.end };
 
-    const char *arr_open = xfind(whole, "<array name=\"mCmc\" type=\"class\" count=\"3\">");
+    const char *arr_open = xfind(from, "<array name=\"mCmc\" type=\"class\" count=\"3\">");
     if (!arr_open) return -1;
     xspan after_arr = { arr_open, whole.end };
 
@@ -551,6 +557,31 @@ int pawnsave_find_main_pawn_region(const uint8_t *xml, size_t xml_len,
     size_t end = (size_t)((const uint8_t *)close - xml) + 8;  /* len("</class>") */
     *out_off = off;
     *out_len = end - off;
+    return 0;
+}
+
+int pawnsave_find_main_pawn_region(const uint8_t *xml, size_t xml_len,
+                                   size_t *out_off, size_t *out_len)
+{
+    if (!xml || !out_off || !out_len) return -1;
+    return find_main_pawn_region_from(xml, xml_len, 0, out_off, out_len);
+}
+
+int pawnsave_find_main_pawn_regions(const uint8_t *xml, size_t xml_len,
+                                    struct pawnsave_region *out, int cap,
+                                    int *out_count)
+{
+    if (!xml || !out || cap <= 0 || !out_count) return -1;
+    *out_count = 0;
+    size_t start = 0;
+    while (*out_count < cap) {
+        size_t off, len;
+        if (find_main_pawn_region_from(xml, xml_len, start, &off, &len) != 0) break;
+        out[*out_count].off = off;
+        out[*out_count].len = len;
+        (*out_count)++;
+        start = off + len;
+    }
     return 0;
 }
 

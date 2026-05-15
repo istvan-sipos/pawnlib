@@ -4,12 +4,17 @@
  * <class type="cSAVE_DATA_CMC">…</class> XML region as a sidecar
  * (<HEX>.xml) next to the .pawn archive. The sidecar is well-formed XML —
  * a single root element — so any XML tool can parse it. This tool reads
- * that sidecar and overwrites the target save's own mCmc[0] (main-pawn)
- * region with the same bytes, then re-deflates and repacks. Result:
- * in-game, the pawn that lived inside that archive becomes the player's
- * main pawn — vocation, skills, augments, inclinations, gear, study flags
- * all preserved. (Visible appearance is read by the game from a separate
- * source and is not replaced.)
+ * that sidecar and overwrites BOTH of the target save's main-pawn slots
+ * (mPlayerDataManual.mCmc[0] and mPlayerDataBase.mCmc[0]) with the same
+ * bytes, then re-deflates and repacks. Patching both copies is required:
+ * an empirical save-diff (see plans/the-next-thing-is-frolicking-neumann.md)
+ * showed that the game writes mEdit, inclination float values, mExp, and
+ * mStudyData.* to both copies on every inn save; with only Manual patched,
+ * the next inn save reads Base's stale values back into memory and the
+ * appearance / inclination splice gets overwritten.
+ *
+ * Result: vocation, skills, augments, inclinations, gear, study data, and
+ * visible appearance all match the archived pawn after a normal Continue.
  *
  * Usage:
  *   restore_pawn <archive-or-xml> <DDDA.sav>
@@ -162,9 +167,10 @@ static void print_usage(FILE *f)
         "\n"
         "  --version             Print version and exit.\n"
         "\n"
-        "Note: only the live mCmc array is patched; the checkpoint snapshot\n"
-        "is not. Save at an inn after restoring to refresh the checkpoint —\n"
-        "otherwise a death-and-restart will revert to the previous main pawn.\n",
+        "Note: both the live and checkpoint mCmc[0] copies are patched in\n"
+        "place; no inn rest is required to make the change stick across a\n"
+        "death-and-restart. (Saving at an inn after loading is still a sane\n"
+        "habit but no longer a workaround for the previous single-copy fix.)\n",
         PAWNLIB_VERSION);
 }
 
@@ -288,22 +294,33 @@ int main(int argc, char *argv[])
     }
     printf("inflated:   %u bytes\n", real_size);
 
-    /* 5. Locate target's main-pawn region. */
-    size_t mp_off = 0, mp_len = 0;
-    if (pawnsave_find_main_pawn_region(xml, real_size, &mp_off, &mp_len) != 0) {
+    /* 5. Locate every main-pawn region in the save. A DDDA save has two:
+     *    mPlayerDataManual.mCmc[0] (live state read on Continue) and
+     *    mPlayerDataBase.mCmc[0] (checkpoint snapshot the game also writes
+     *    on each inn save for fields like mEdit and inclinations). Both
+     *    must be patched — see save-diff matrix in the design plan. */
+    struct pawnsave_region regions[4];
+    int region_count = 0;
+    if (pawnsave_find_main_pawn_regions(xml, real_size, regions, 4, &region_count) != 0
+        || region_count == 0) {
         fprintf(stderr,
-                "restore_pawn: main-pawn region not found in '%s' "
+                "restore_pawn: no main-pawn regions found in '%s' "
                 "(schema mismatch — game patched?)\n", sav_arg);
         free(xml); free(save_bytes); free(sidecar);
         return 4;
     }
-    printf("target mp:  bytes [%lu, %lu)  size=%lu\n",
-           (unsigned long)mp_off,
-           (unsigned long)(mp_off + mp_len),
-           (unsigned long)mp_len);
+    size_t total_old_len = 0;
+    for (int i = 0; i < region_count; i++) {
+        printf("target mp[%d]: bytes [%lu, %lu)  size=%lu\n",
+               i,
+               (unsigned long)regions[i].off,
+               (unsigned long)(regions[i].off + regions[i].len),
+               (unsigned long)regions[i].len);
+        total_old_len += regions[i].len;
+    }
 
-    /* 6. Splice the new bytes in. New XML = pre + sidecar + post. */
-    size_t new_xml_len = real_size - mp_len + sidecar_len;
+    /* 6. Splice every region in a single ascending pass. */
+    size_t new_xml_len = real_size - total_old_len + (size_t)region_count * sidecar_len;
     uint8_t *new_xml = (uint8_t *)malloc(new_xml_len);
     if (!new_xml) {
         fprintf(stderr, "restore_pawn: out of memory (%lu bytes)\n",
@@ -311,14 +328,17 @@ int main(int argc, char *argv[])
         free(xml); free(save_bytes); free(sidecar);
         return 1;
     }
-    memcpy(new_xml,                          xml,                            mp_off);
-    memcpy(new_xml + mp_off,                 sidecar,                        sidecar_len);
-    memcpy(new_xml + mp_off + sidecar_len,
-           xml + mp_off + mp_len,
-           real_size - mp_off - mp_len);
+    size_t src = 0, dst = 0;
+    for (int i = 0; i < region_count; i++) {
+        size_t prefix = regions[i].off - src;
+        memcpy(new_xml + dst, xml + src, prefix);  dst += prefix;
+        memcpy(new_xml + dst, sidecar, sidecar_len); dst += sidecar_len;
+        src = regions[i].off + regions[i].len;
+    }
+    memcpy(new_xml + dst, xml + src, real_size - src);
     long delta = (long)new_xml_len - (long)real_size;
-    printf("spliced:    %lu bytes  (delta %+ld)\n",
-           (unsigned long)new_xml_len, delta);
+    printf("spliced:    %lu bytes across %d region(s)  (delta %+ld)\n",
+           (unsigned long)new_xml_len, region_count, delta);
     free(xml);
 
     /* 7. Re-deflate. zlib's compressBound(n) returns the worst-case size. */
@@ -387,7 +407,7 @@ int main(int argc, char *argv[])
     free(sidecar);
 
     printf("\nDone. Load DDDA in-game; the archived pawn is now in the main slot.\n"
-           "Tip: save at an inn after loading — that refreshes the checkpoint snapshot\n"
-           "so a death/reload won't revert to the previous main pawn.\n");
+           "Both the live and checkpoint copies were patched, so the change\n"
+           "survives a death-and-respawn without an inn rest.\n");
     return 0;
 }

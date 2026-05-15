@@ -1,0 +1,44 @@
+/* PE VERSIONINFO resource for restore_pawn.exe.
+ *
+ * Compiled by windres at build time; the Makefile passes PAWNLIB_VER_NUM
+ * (four-comma-separated u16s, e.g. 1,1,0,0) and PAWNLIB_VER_STR
+ * (display string, e.g. "1.1.0") via -D. Default fallbacks below let
+ * a manual `windres` invocation succeed without those macros. */
+#include <winver.h>
+
+#ifndef PAWNLIB_VER_NUM
+#define PAWNLIB_VER_NUM 0,0,0,0
+#endif
+#ifndef PAWNLIB_VER_STR
+#define PAWNLIB_VER_STR "dev"
+#endif
+
+VS_VERSION_INFO VERSIONINFO
+ FILEVERSION    PAWNLIB_VER_NUM
+ PRODUCTVERSION PAWNLIB_VER_NUM
+ FILEFLAGSMASK  VS_FFI_FILEFLAGSMASK
+ FILEFLAGS      0
+ FILEOS         VOS_NT_WINDOWS32
+ FILETYPE       VFT_APP
+ FILESUBTYPE    VFT2_UNKNOWN
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        /* 0409 = US English; 04E4 = Windows-1252 codepage. */
+        BLOCK "040904E4"
+        BEGIN
+            VALUE "CompanyName",      "Istvan Sipos"
+            VALUE "FileDescription",  "Restore an archived pawn into a Dragon's Dogma: Dark Arisen save"
+            VALUE "FileVersion",      PAWNLIB_VER_STR
+            VALUE "InternalName",     "restore_pawn"
+            VALUE "LegalCopyright",   "MIT License - see LICENSE"
+            VALUE "OriginalFilename", "restore_pawn.exe"
+            VALUE "ProductName",      "pawnlib"
+            VALUE "ProductVersion",   PAWNLIB_VER_STR
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x0409, 0x04E4
+    END
+END

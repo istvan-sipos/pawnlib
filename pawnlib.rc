@@ -1,0 +1,40 @@
+/* PE VERSIONINFO resource for pawnlib.dll. See tools/restore_pawn.rc
+ * for the macro conventions; this differs only in FILETYPE (VFT_DLL),
+ * InternalName, OriginalFilename, and FileDescription. */
+#include <winver.h>
+
+#ifndef PAWNLIB_VER_NUM
+#define PAWNLIB_VER_NUM 0,0,0,0
+#endif
+#ifndef PAWNLIB_VER_STR
+#define PAWNLIB_VER_STR "dev"
+#endif
+
+VS_VERSION_INFO VERSIONINFO
+ FILEVERSION    PAWNLIB_VER_NUM
+ PRODUCTVERSION PAWNLIB_VER_NUM
+ FILEFLAGSMASK  VS_FFI_FILEFLAGSMASK
+ FILEFLAGS      0
+ FILEOS         VOS_NT_WINDOWS32
+ FILETYPE       VFT_DLL
+ FILESUBTYPE    VFT2_UNKNOWN
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "040904E4"
+        BEGIN
+            VALUE "CompanyName",      "Istvan Sipos"
+            VALUE "FileDescription",  "Pawn archive mod for Dragon's Dogma: Dark Arisen"
+            VALUE "FileVersion",      PAWNLIB_VER_STR
+            VALUE "InternalName",     "pawnlib"
+            VALUE "LegalCopyright",   "MIT License - see LICENSE"
+            VALUE "OriginalFilename", "pawnlib.dll"
+            VALUE "ProductName",      "pawnlib"
+            VALUE "ProductVersion",   PAWNLIB_VER_STR
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x0409, 0x04E4
+    END
+END

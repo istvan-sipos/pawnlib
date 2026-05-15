@@ -54,7 +54,7 @@ jobs:
           mkdir -p "$NAME"
           cp pawnlib.dll       "$NAME/"
           cp pawnlib.ini       "$NAME/"
-          cp README.md         "$NAME/"
+          cp README.txt        "$NAME/"
           cp LICENSE           "$NAME/"
           cp tools/restore_pawn.exe "$NAME/"
           zip -r "$NAME.zip" "$NAME"
